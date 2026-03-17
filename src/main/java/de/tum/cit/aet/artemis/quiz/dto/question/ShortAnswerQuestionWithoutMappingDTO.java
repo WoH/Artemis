@@ -1,10 +1,12 @@
 package de.tum.cit.aet.artemis.quiz.dto.question;
 
 import java.util.List;
+import java.util.Objects;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 import de.tum.cit.aet.artemis.quiz.domain.ShortAnswerQuestion;
+import de.tum.cit.aet.artemis.quiz.domain.ShortAnswerSolution;
 import de.tum.cit.aet.artemis.quiz.dto.ShortAnswerSolutionDTO;
 import de.tum.cit.aet.artemis.quiz.dto.ShortAnswerSpotDTO;
 
@@ -13,7 +15,8 @@ public record ShortAnswerQuestionWithoutMappingDTO(List<ShortAnswerSpotDTO> spot
 
     public static ShortAnswerQuestionWithoutMappingDTO of(ShortAnswerQuestion question) {
         return new ShortAnswerQuestionWithoutMappingDTO(question.getSpots().stream().map(ShortAnswerSpotDTO::of).toList(),
-                question.getSolutions().stream().map(ShortAnswerSolutionDTO::of).toList(), question.getSimilarityValue(), question.getMatchLetterCase());
+                Objects.requireNonNullElse(question.getSolutions(), List.<ShortAnswerSolution>of()).stream().map(ShortAnswerSolutionDTO::of).toList(),
+                question.getSimilarityValue(), question.getMatchLetterCase());
     }
 
 }

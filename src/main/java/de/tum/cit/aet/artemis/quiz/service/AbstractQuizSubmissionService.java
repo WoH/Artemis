@@ -16,6 +16,7 @@ import de.tum.cit.aet.artemis.exercise.domain.SubmissionType;
 import de.tum.cit.aet.artemis.exercise.service.SubmissionVersionService;
 import de.tum.cit.aet.artemis.quiz.domain.AbstractQuizSubmission;
 import de.tum.cit.aet.artemis.quiz.domain.QuizExercise;
+import de.tum.cit.aet.artemis.quiz.domain.QuizSubmission;
 
 @Profile(PROFILE_CORE)
 @Lazy
@@ -60,6 +61,7 @@ public abstract class AbstractQuizSubmissionService<T extends AbstractQuizSubmis
 
         // versioning of submission
         try {
+            filterSubmissionForVersioning(quizSubmission);
             submissionVersionService.saveVersionForIndividual(quizSubmission, user);
         }
         catch (Exception ex) {
@@ -69,5 +71,11 @@ public abstract class AbstractQuizSubmissionService<T extends AbstractQuizSubmis
         log.debug("submit exam quiz finished: {}", savedQuizSubmission);
 
         return savedQuizSubmission;
+    }
+
+    private void filterSubmissionForVersioning(AbstractQuizSubmission submission) {
+        if (submission instanceof QuizSubmission) {
+            ((QuizSubmission) submission).filterForStudentsDuringQuiz();
+        }
     }
 }

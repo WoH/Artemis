@@ -526,7 +526,9 @@ public class QuizSubmissionService extends AbstractQuizSubmissionService<QuizSub
                 if (dragItem != null && dropLocation != null) {
                     DragAndDropMapping dragAndDropMapping = new DragAndDropMapping();
                     dragAndDropMapping.setDragItem(dragItem);
+                    dragAndDropMapping.setDragItemIndex(dragAndDropQuestion.getDragItems().indexOf(dragItem));
                     dragAndDropMapping.setDropLocation(dropLocation);
+                    dragAndDropMapping.setDropLocationIndex(dragAndDropQuestion.getDropLocations().indexOf(dropLocation));
                     dragAndDropMapping.setSubmittedAnswer(dragAndDropSubmittedAnswer);
                     mappings.add(dragAndDropMapping);
                 }
@@ -607,7 +609,11 @@ public class QuizSubmissionService extends AbstractQuizSubmissionService<QuizSub
      *                                     (e.g.\ answer option, spot, drag item, drop location) cannot be found in the corresponding quiz question
      */
     public QuizSubmission createNewSubmissionFromDTO(QuizSubmissionFromStudentDTO quizSubmission, QuizExercise quizExercise) {
-        if (!hasSubmittedAnswersForAllQuestions(quizSubmission, quizExercise)) {
+        return createNewSubmissionFromDTO(quizSubmission, quizExercise, true);
+    }
+
+    public QuizSubmission createNewSubmissionFromDTO(QuizSubmissionFromStudentDTO quizSubmission, QuizExercise quizExercise, boolean requireAllQuestions) {
+        if (requireAllQuestions && !hasSubmittedAnswersForAllQuestions(quizSubmission, quizExercise)) {
             throw new BadRequestException("QuizSubmission does not contain submitted answers for all questions");
         }
         if (!hasNoDuplicateSubmittedAnswers(quizSubmission)) {

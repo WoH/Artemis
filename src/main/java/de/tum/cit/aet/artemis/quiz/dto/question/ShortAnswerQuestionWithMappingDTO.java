@@ -1,6 +1,7 @@
 package de.tum.cit.aet.artemis.quiz.dto.question;
 
 import java.util.List;
+import java.util.Objects;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonUnwrapped;
@@ -14,7 +15,8 @@ public record ShortAnswerQuestionWithMappingDTO(@JsonUnwrapped ShortAnswerQuesti
 
     public static ShortAnswerQuestionWithMappingDTO of(ShortAnswerQuestion question) {
         return new ShortAnswerQuestionWithMappingDTO(ShortAnswerQuestionWithoutMappingDTO.of(question),
-                question.getCorrectMappings().stream().map(ShortAnswerMappingDTO::of).toList());
+                Objects.requireNonNullElse(question.getCorrectMappings(), List.<de.tum.cit.aet.artemis.quiz.domain.ShortAnswerMapping>of()).stream().map(ShortAnswerMappingDTO::of)
+                        .toList());
     }
 
 }

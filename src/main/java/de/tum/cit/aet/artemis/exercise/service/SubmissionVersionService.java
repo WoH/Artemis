@@ -9,7 +9,10 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import de.tum.cit.aet.artemis.core.domain.User;
 import de.tum.cit.aet.artemis.core.repository.UserRepository;
@@ -90,9 +93,9 @@ public class SubmissionVersionService {
             }
             case QuizSubmission quizSubmission -> {
                 try {
-                    // TODO: it might be nice to remove some question parameters (i.e. SubmittedAnswer -> QuizQuestion) to reduce the json size as those are not really necessary,
-                    // however directly manipulating the object is dangerous because it will be returned to the client.
-                    return objectMapper.writeValueAsString(quizSubmission.getSubmittedAnswers());
+                    JsonNode quizSubmissionTree = objectMapper.valueToTree(quizSubmission.getSubmittedAnswers());
+                    removeFieldRecursively(quizSubmissionTree, "exerciseId");
+                    return objectMapper.writeValueAsString(quizSubmissionTree);
                 }
                 catch (JsonProcessingException e) {
                     log.error("Error when writing quiz submission {} to json value. Will fall back to string representation", submission, e);
@@ -100,6 +103,16 @@ public class SubmissionVersionService {
                 }
             }
             default -> throw new IllegalArgumentException("Versioning for this submission type not supported: " + submission.getType());
+        }
+    }
+
+    private void removeFieldRecursively(JsonNode node, String fieldName) {
+        if (node instanceof ObjectNode objectNode) {
+            objectNode.remove(fieldName);
+            objectNode.elements().forEachRemaining(child -> removeFieldRecursively(child, fieldName));
+        }
+        else if (node instanceof ArrayNode arrayNode) {
+            arrayNode.elements().forEachRemaining(child -> removeFieldRecursively(child, fieldName));
         }
     }
 }

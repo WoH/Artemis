@@ -233,7 +233,7 @@ public class QuizSubmissionResource {
         QuizExercise quizExercise = quizExerciseRepository.findByIdWithQuestionsElseThrow(exerciseId);
         User user = userRepository.getUserWithGroupsAndAuthorities();
 
-        QuizSubmission entity = quizSubmissionService.createNewSubmissionFromDTO(quizSubmission, quizExercise);
+        QuizSubmission entity = quizSubmissionService.createNewSubmissionFromDTO(quizSubmission, quizExercise, false);
 
         if (quizExercise.isExamExercise()) {
             ExamSubmissionApi api = examSubmissionApi.orElseThrow(() -> new ExamApiNotPresentException(ExamSubmissionApi.class));
