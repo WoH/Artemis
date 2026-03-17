@@ -252,6 +252,30 @@ public class QuizSubmissionService extends AbstractQuizSubmissionService<QuizSub
 
     /**
      * Saves or submits a quiz submission for a live quiz mode based on the specified parameters.
+     * Accepts a client-side DTO, converts it to an entity, and delegates to
+     * {@link #saveSubmissionForLiveMode(Long, QuizSubmission, String, boolean)}.
+     * <p>
+     * The exercise is fetched internally so the DTO can be converted with the necessary question data.
+     *
+     * @param exerciseId     The ID of the quiz exercise.
+     * @param quizSubmission The quiz submission DTO from the student.
+     * @param userLogin      The login of the user submitting the quiz.
+     * @param submitted      A boolean indicating whether the quiz is being submitted (true) or saved (false).
+     * @return The saved or submitted {@link QuizSubmission}.
+     * @throws QuizSubmissionException If there is an error during the quiz submission process.
+     * @throws EntityNotFoundException If the quiz exercise or submission cannot be found.
+     */
+    public QuizSubmission saveSubmissionForLiveMode(Long exerciseId, QuizSubmissionFromStudentDTO quizSubmission, String userLogin, boolean submitted)
+            throws QuizSubmissionException {
+        QuizExercise quizExercise = quizExerciseRepository.findByIdWithQuestionsElseThrow(exerciseId);
+        QuizSubmission entity = createNewSubmissionFromDTO(quizSubmission, quizExercise);
+        entity.setSubmitted(submitted);
+        entity.setResults(List.of());
+        return saveSubmissionForLiveMode(exerciseId, entity, userLogin, submitted);
+    }
+
+    /**
+     * Saves or submits a quiz submission for a live quiz mode based on the specified parameters.
      * This method handles both saving interim quiz data and submitting final quiz responses
      * depending on the `submitted` flag. The method performs the following steps:
      * <p>
@@ -405,6 +429,27 @@ public class QuizSubmissionService extends AbstractQuizSubmissionService<QuizSub
         return savedQuizSubmission;
     }
 
+    /**
+     * Creates a single {@link SubmittedAnswer} entity from a client-side DTO and the already-loaded quiz question.
+     * <p>
+     * Unlike {@link #createNewSubmissionFromDTO}, this method converts only one submitted answer and does not perform
+     * completeness or duplicate checks. It is intended for single-question use cases such as training mode.
+     *
+     * @param submittedAnswerDTO the DTO representing the student's answer for one question
+     * @param quizQuestion       the quiz question this answer belongs to (must already be loaded with its related data)
+     * @return the converted {@link SubmittedAnswer} entity
+     * @throws BadRequestException     if the DTO type is unknown or incompatible with the question type
+     * @throws EntityNotFoundException if a referenced inner element cannot be found in the question
+     */
+    public SubmittedAnswer createSubmittedAnswerFromDTO(SubmittedAnswerFromStudentDTO submittedAnswerDTO, QuizQuestion quizQuestion) {
+        Map<Long, QuizQuestion> singletonMap = Map.of(quizQuestion.getId(), quizQuestion);
+        return switch (submittedAnswerDTO) {
+            case MultipleChoiceSubmittedAnswerFromStudentDTO mc -> createMultipleChoiceSubmittedAnswerFromDTO(mc, singletonMap);
+            case ShortAnswerSubmittedAnswerFromStudentDTO sa -> createShortAnswerSubmittedAnswerFromDTO(sa, singletonMap);
+            case DragAndDropSubmittedAnswerFromStudentDTO dnd -> createDragAndDropSubmittedAnswerFromDTO(dnd, singletonMap);
+        };
+    }
+
     private MultipleChoiceSubmittedAnswer createMultipleChoiceSubmittedAnswerFromDTO(MultipleChoiceSubmittedAnswerFromStudentDTO submittedAnswer,
             Map<Long, QuizQuestion> quizQuestionMap) {
         QuizQuestion quizQuestion = quizQuestionMap.get(submittedAnswer.questionId());
@@ -532,7 +577,6 @@ public class QuizSubmissionService extends AbstractQuizSubmissionService<QuizSub
                     DragAndDropSubmittedAnswer dragAndDropSubmittedAnswer = createDragAndDropSubmittedAnswerFromDTO(dragAndDropSubmittedAnswerFromStudentDTO, quizQuestionMap);
                     submittedAnswers.add(dragAndDropSubmittedAnswer);
                 }
-                default -> throw new BadRequestException("Unknown SubmittedAnswerFromStudentDTO type: " + submittedAnswerDTO.getClass().getName());
             }
         }
         return submittedAnswers;

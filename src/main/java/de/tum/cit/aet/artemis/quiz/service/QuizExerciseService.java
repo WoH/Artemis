@@ -650,16 +650,16 @@ public class QuizExerciseService extends QuizService<QuizExercise> {
      * @param user           The user for whom to fetch all available exercises
      * @return A wrapper object containing a list of all found exercises and the total number of pages
      */
-    public SearchResultPageDTO<QuizExercise> getAllOnPageWithSize(final SearchTermPageableSearchDTO<String> search, final Boolean isCourseFilter, final Boolean isExamFilter,
-            final User user) {
+    public SearchResultPageDTO<QuizExerciseWithoutQuestionsDTO> getAllOnPageWithSize(final SearchTermPageableSearchDTO<String> search, final Boolean isCourseFilter,
+            final Boolean isExamFilter, final User user) {
         if (!isCourseFilter && !isExamFilter) {
-            return new SearchResultPageDTO<>(Collections.emptyList(), 0);
+            return new SearchResultPageDTO<>(Collections.<QuizExerciseWithoutQuestionsDTO>emptyList(), 0);
         }
         final var pageable = PageUtil.createDefaultPageRequest(search, PageUtil.ColumnMapping.EXERCISE);
         final var searchTerm = search.getSearchTerm();
         Specification<QuizExercise> specification = exerciseSpecificationService.getExerciseSearchSpecification(searchTerm, isCourseFilter, isExamFilter, user, pageable);
         Page<QuizExercise> exercisePage = quizExerciseRepository.findAll(specification, pageable);
-        return new SearchResultPageDTO<>(exercisePage.getContent(), exercisePage.getTotalPages());
+        return new SearchResultPageDTO<>(exercisePage.getContent().stream().map(QuizExerciseWithoutQuestionsDTO::of).toList(), exercisePage.getTotalPages());
     }
 
     /**
@@ -1336,7 +1336,7 @@ public class QuizExerciseService extends QuizService<QuizExercise> {
      * @param batch        the optional quiz batch associated with the student
      * @return the mapped DTO (QuizExerciseWithoutQuestionsDTO, QuizExerciseWithQuestionsDTO, or QuizExerciseWithSolutionsDTO)
      */
-    public Object createQuizExerciseDTOForStudent(QuizExercise quizExercise, Optional<QuizBatch> batch) {
+    public QuizExerciseForStudentDTO createQuizExerciseDTOForStudent(QuizExercise quizExercise, Optional<QuizBatch> batch) {
         if (quizExercise.isQuizEnded()) {
             return QuizExerciseWithSolutionDTO.of(quizExercise);
         }

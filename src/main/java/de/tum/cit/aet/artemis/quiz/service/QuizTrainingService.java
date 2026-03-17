@@ -13,6 +13,7 @@ import de.tum.cit.aet.artemis.quiz.domain.QuizQuestion;
 import de.tum.cit.aet.artemis.quiz.domain.SubmittedAnswer;
 import de.tum.cit.aet.artemis.quiz.dto.LeaderboardSettingDTO;
 import de.tum.cit.aet.artemis.quiz.dto.submittedanswer.SubmittedAnswerAfterEvaluationDTO;
+import de.tum.cit.aet.artemis.quiz.dto.submittedanswer.SubmittedAnswerFromStudentDTO;
 import de.tum.cit.aet.artemis.quiz.repository.QuizQuestionRepository;
 import de.tum.cit.aet.artemis.quiz.repository.QuizTrainingLeaderboardRepository;
 
@@ -27,11 +28,14 @@ public class QuizTrainingService {
 
     private final QuizTrainingLeaderboardRepository quizTrainingLeaderboardRepository;
 
+    private final QuizSubmissionService quizSubmissionService;
+
     public QuizTrainingService(QuizQuestionProgressService quizQuestionProgressService, QuizQuestionRepository quizQuestionRepository,
-            QuizTrainingLeaderboardRepository quizTrainingLeaderboardRepository) {
+            QuizTrainingLeaderboardRepository quizTrainingLeaderboardRepository, QuizSubmissionService quizSubmissionService) {
         this.quizQuestionProgressService = quizQuestionProgressService;
         this.quizQuestionRepository = quizQuestionRepository;
         this.quizTrainingLeaderboardRepository = quizTrainingLeaderboardRepository;
+        this.quizSubmissionService = quizSubmissionService;
     }
 
     /**
@@ -45,22 +49,30 @@ public class QuizTrainingService {
      * @param answeredAt      the time when the question was answered
      * @return a DTO containing the submitted answer after the evaluation
      */
-    public SubmittedAnswerAfterEvaluationDTO submitForTraining(long quizQuestionId, long userId, long courseId, SubmittedAnswer submittedAnswer, boolean isRated,
+    public SubmittedAnswerAfterEvaluationDTO submitForTraining(long quizQuestionId, long userId, long courseId, SubmittedAnswerFromStudentDTO submittedAnswer, boolean isRated,
             ZonedDateTime answeredAt) {
         QuizQuestion quizQuestion = quizQuestionRepository.findByIdElseThrow(quizQuestionId);
 
-        double score = quizQuestion.scoreForAnswer(submittedAnswer);
+        SubmittedAnswer entity = quizSubmissionService.createSubmittedAnswerFromDTO(submittedAnswer, quizQuestion);
 
-        submittedAnswer.setScoreInPoints(score);
-        submittedAnswer.setQuizQuestion(quizQuestion);
+        double score = quizQuestion.scoreForAnswer(entity);
+
+        entity.setScoreInPoints(score);
+        entity.setQuizQuestion(quizQuestion);
 
         if (isRated) {
-            quizQuestionProgressService.saveProgressFromTraining(quizQuestion, userId, courseId, submittedAnswer, answeredAt);
+            quizQuestionProgressService.saveProgressFromTraining(quizQuestion, userId, courseId, entity, answeredAt);
         }
 
-        return SubmittedAnswerAfterEvaluationDTO.of(submittedAnswer);
+        return SubmittedAnswerAfterEvaluationDTO.of(entity);
     }
 
+    /**
+     * Retrieves the leaderboard visibility settings for the given user.
+     *
+     * @param userId the id of the user whose leaderboard settings should be retrieved
+     * @return a LeaderboardSettingDTO with the user's showInLeaderboard preference, or {@code null} if not yet set
+     */
     public LeaderboardSettingDTO getLeaderboardSettings(long userId) {
         Optional<Boolean> showInLeaderboardOptional = quizTrainingLeaderboardRepository.getShowInLeaderboard(userId);
         Boolean showInLeaderboard = showInLeaderboardOptional.orElse(null);

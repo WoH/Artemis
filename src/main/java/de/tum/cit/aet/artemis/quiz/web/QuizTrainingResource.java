@@ -26,24 +26,23 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import de.tum.cit.aet.artemis.core.domain.Course;
 import de.tum.cit.aet.artemis.core.domain.User;
-import de.tum.cit.aet.artemis.core.repository.CourseRepository;
 import de.tum.cit.aet.artemis.core.repository.UserRepository;
-import de.tum.cit.aet.artemis.core.security.Role;
 import de.tum.cit.aet.artemis.core.security.annotations.EnforceAtLeastStudent;
 import de.tum.cit.aet.artemis.core.security.annotations.enforceRoleInCourse.EnforceAtLeastStudentInCourse;
-import de.tum.cit.aet.artemis.core.service.AuthorizationCheckService;
 import de.tum.cit.aet.artemis.core.util.TimeUtil;
-import de.tum.cit.aet.artemis.quiz.domain.SubmittedAnswer;
 import de.tum.cit.aet.artemis.quiz.dto.LeaderboardSettingDTO;
 import de.tum.cit.aet.artemis.quiz.dto.LeaderboardWithCurrentUserEntryDTO;
 import de.tum.cit.aet.artemis.quiz.dto.question.QuizQuestionTrainingDTO;
 import de.tum.cit.aet.artemis.quiz.dto.submittedanswer.SubmittedAnswerAfterEvaluationDTO;
+import de.tum.cit.aet.artemis.quiz.dto.submittedanswer.SubmittedAnswerFromStudentDTO;
 import de.tum.cit.aet.artemis.quiz.service.QuizQuestionProgressService;
 import de.tum.cit.aet.artemis.quiz.service.QuizTrainingLeaderboardService;
 import de.tum.cit.aet.artemis.quiz.service.QuizTrainingService;
 
+/**
+ * REST controller for managing quiz training sessions, leaderboards, and submitted answers in training mode.
+ */
 @Profile(PROFILE_CORE)
 @Lazy
 @RestController
@@ -56,20 +55,14 @@ public class QuizTrainingResource {
 
     private final UserRepository userRepository;
 
-    private final CourseRepository courseRepository;
-
-    private final AuthorizationCheckService authCheckService;
-
     private final QuizQuestionProgressService quizQuestionProgressService;
 
     private final QuizTrainingService quizTrainingService;
 
-    public QuizTrainingResource(QuizTrainingLeaderboardService quizTrainingLeaderboardService, UserRepository userRepository, CourseRepository courseRepository,
-            AuthorizationCheckService authCheckService, QuizQuestionProgressService quizQuestionProgressService, QuizTrainingService quizTrainingService) {
+    public QuizTrainingResource(QuizTrainingLeaderboardService quizTrainingLeaderboardService, UserRepository userRepository,
+            QuizQuestionProgressService quizQuestionProgressService, QuizTrainingService quizTrainingService) {
         this.quizTrainingLeaderboardService = quizTrainingLeaderboardService;
         this.userRepository = userRepository;
-        this.courseRepository = courseRepository;
-        this.authCheckService = authCheckService;
         this.quizQuestionProgressService = quizQuestionProgressService;
         this.quizTrainingService = quizTrainingService;
     }
@@ -106,14 +99,12 @@ public class QuizTrainingResource {
      * @return the ResponseEntity with status 200 (OK) and the result of the evaluated submitted answer as its body
      */
     @PostMapping("courses/{courseId}/training-questions/{quizQuestionId}/submit")
-    @EnforceAtLeastStudent
+    @EnforceAtLeastStudentInCourse
     public ResponseEntity<SubmittedAnswerAfterEvaluationDTO> submitForTraining(@PathVariable long courseId, @PathVariable long quizQuestionId, @RequestParam boolean isRated,
-            @Valid @RequestBody SubmittedAnswer submittedAnswer) {
+            @Valid @RequestBody SubmittedAnswerFromStudentDTO submittedAnswer) {
         log.debug("REST request to submit QuizQuestion for training : {}", submittedAnswer);
 
         User user = userRepository.getUserWithGroupsAndAuthorities();
-        Course course = courseRepository.findByIdElseThrow(courseId);
-        authCheckService.checkHasAtLeastRoleInCourseElseThrow(Role.STUDENT, course, user);
         ZonedDateTime answeredAt = TimeUtil.now();
 
         SubmittedAnswerAfterEvaluationDTO result = quizTrainingService.submitForTraining(quizQuestionId, user.getId(), courseId, submittedAnswer, isRated, answeredAt);
@@ -183,7 +174,7 @@ public class QuizTrainingResource {
         log.debug("REST request to initialize or update leaderboard entry: {}", leaderboardEntryDTO);
 
         User user = userRepository.getUserWithGroupsAndAuthorities();
-        boolean shownInLeaderboard = leaderboardEntryDTO.showInLeaderboard() != null ? leaderboardEntryDTO.showInLeaderboard() : false;
+        boolean shownInLeaderboard = Boolean.TRUE.equals(leaderboardEntryDTO.showInLeaderboard());
         quizTrainingLeaderboardService.setInitialLeaderboardEntry(user.getId(), courseId, shownInLeaderboard);
         return ResponseEntity.ok().build();
     }

@@ -36,7 +36,9 @@ import de.tum.cit.aet.artemis.exercise.repository.StudentParticipationRepository
 import de.tum.cit.aet.artemis.quiz.domain.QuizBatch;
 import de.tum.cit.aet.artemis.quiz.domain.QuizExercise;
 import de.tum.cit.aet.artemis.quiz.dto.exercise.QuizExerciseForCourseDTO;
+import de.tum.cit.aet.artemis.quiz.dto.exercise.QuizExerciseForStudentDTO;
 import de.tum.cit.aet.artemis.quiz.dto.exercise.QuizExerciseWithStatisticsDTO;
+import de.tum.cit.aet.artemis.quiz.dto.exercise.QuizExerciseWithoutQuestionsDTO;
 import de.tum.cit.aet.artemis.quiz.repository.QuizBatchRepository;
 import de.tum.cit.aet.artemis.quiz.repository.QuizExerciseRepository;
 import de.tum.cit.aet.artemis.quiz.service.QuizBatchService;
@@ -164,7 +166,7 @@ public class QuizExerciseRetrievalResource {
      */
     @GetMapping("quiz-exercises/{quizExerciseId}/for-student")
     @EnforceAtLeastStudent
-    public ResponseEntity<?> getQuizExerciseForStudent(@PathVariable long quizExerciseId) {
+    public ResponseEntity<QuizExerciseForStudentDTO> getQuizExerciseForStudent(@PathVariable long quizExerciseId) {
         log.info("REST request to get quiz exercise : {}", quizExerciseId);
         QuizExercise quizExercise = quizExerciseRepository.findByIdWithQuestionsElseThrow(quizExerciseId);
         User user = userRepository.getUserWithGroupsAndAuthorities();
@@ -175,7 +177,7 @@ public class QuizExerciseRetrievalResource {
         var batch = quizBatchService.getQuizBatchForStudentByLogin(quizExercise, user.getLogin());
         log.info("Found batch {} for user {}", batch.orElse(null), user.getLogin());
         quizExercise.setQuizBatches(batch.stream().collect(Collectors.toSet()));
-        Object dto = quizExerciseService.createQuizExerciseDTOForStudent(quizExercise, batch);
+        QuizExerciseForStudentDTO dto = quizExerciseService.createQuizExerciseDTOForStudent(quizExercise, batch);
         return ResponseEntity.ok(dto);
     }
 
@@ -190,7 +192,7 @@ public class QuizExerciseRetrievalResource {
      */
     @GetMapping("quiz-exercises")
     @EnforceAtLeastEditor
-    public ResponseEntity<SearchResultPageDTO<QuizExercise>> getAllExercisesOnPage(SearchTermPageableSearchDTO<String> search,
+    public ResponseEntity<SearchResultPageDTO<QuizExerciseWithoutQuestionsDTO>> getAllExercisesOnPage(SearchTermPageableSearchDTO<String> search,
             @RequestParam(defaultValue = "true") boolean isCourseFilter, @RequestParam(defaultValue = "true") boolean isExamFilter) {
         final var user = userRepository.getUserWithGroupsAndAuthorities();
         return ResponseEntity.ok(quizExerciseService.getAllOnPageWithSize(search, isCourseFilter, isExamFilter, user));

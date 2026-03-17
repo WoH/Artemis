@@ -21,7 +21,7 @@ import de.tum.cit.aet.artemis.quiz.dto.QuizBatchDTO;
 public record QuizExerciseWithoutQuestionsDTO(Long id, String title, String shortName, ZonedDateTime releaseDate, ZonedDateTime startDate, ZonedDateTime dueDate,
         ZonedDateTime assessmentDueDate, DifficultyLevel difficulty, boolean visibleToStudents, CourseForQuizExerciseDTO course, String type, Boolean randomizeQuestionOrder,
         Integer allowedNumberOfAttempts, Integer remainingNumberOfAttempts, QuizMode quizMode, Integer duration, Set<QuizBatchDTO> quizBatches, boolean quizStarted,
-        boolean quizEnded, IncludedInOverallScore includedInOverallScore, ExerciseMode mode, Double maxPoints, Double bonusPoints) {
+        boolean quizEnded, IncludedInOverallScore includedInOverallScore, ExerciseMode mode, Double maxPoints, Double bonusPoints) implements QuizExerciseForStudentDTO {
 
     /**
      * Creates a QuizExerciseWithoutQuestionsDTO object from a QuizExercise object.
@@ -32,7 +32,7 @@ public record QuizExerciseWithoutQuestionsDTO(Long id, String title, String shor
     public static QuizExerciseWithoutQuestionsDTO of(final QuizExercise quizExercise) {
         Set<QuizBatch> quizBatches = quizExercise.getQuizBatches();
         Set<QuizBatchDTO> quizBatchesDTOs = Set.of();
-        if (Hibernate.isInitialized(quizBatches) && quizBatches != null) {
+        if (quizBatches != null && Hibernate.isInitialized(quizBatches)) {
             quizBatchesDTOs = quizBatches.stream().map(QuizBatchDTO::of).collect(Collectors.toSet());
         }
         return new QuizExerciseWithoutQuestionsDTO(quizExercise.getId(), quizExercise.getTitle(), quizExercise.getShortName(), quizExercise.getReleaseDate(),

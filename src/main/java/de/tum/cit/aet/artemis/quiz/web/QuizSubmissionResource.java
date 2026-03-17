@@ -3,7 +3,6 @@ package de.tum.cit.aet.artemis.quiz.web;
 import static de.tum.cit.aet.artemis.core.config.Constants.PROFILE_CORE;
 
 import java.time.ZonedDateTime;
-import java.util.List;
 import java.util.Optional;
 
 import jakarta.validation.Valid;
@@ -44,6 +43,8 @@ import de.tum.cit.aet.artemis.quiz.domain.QuizExercise;
 import de.tum.cit.aet.artemis.quiz.domain.QuizSubmission;
 import de.tum.cit.aet.artemis.quiz.domain.SubmittedAnswer;
 import de.tum.cit.aet.artemis.quiz.dto.result.ResultAfterEvaluationWithSubmissionDTO;
+import de.tum.cit.aet.artemis.quiz.dto.submission.QuizSubmissionAfterEvaluationDTO;
+import de.tum.cit.aet.artemis.quiz.dto.submission.QuizSubmissionBeforeEvaluationDTO;
 import de.tum.cit.aet.artemis.quiz.dto.submission.QuizSubmissionFromStudentDTO;
 import de.tum.cit.aet.artemis.quiz.repository.QuizExerciseRepository;
 import de.tum.cit.aet.artemis.quiz.service.QuizSubmissionService;
@@ -95,7 +96,6 @@ public class QuizSubmissionResource {
 
     /**
      * TODO: Decide if we want to use this endpoint for both submit and save. If so, we may want to use PUT instead of POST
-     * TODO: Don't trust the user submitted values
      * POST /exercises/:exerciseId/submissions/live : Submit a new quizSubmission for live mode.
      *
      * @param exerciseId     the id of the exercise for which to init a participation
@@ -105,20 +105,13 @@ public class QuizSubmissionResource {
      */
     @PostMapping("exercises/{exerciseId}/submissions/live")
     @EnforceAtLeastStudentInExercise
-    // TODO: Important, we must use a DTO here and we MUST NOT save an entity object retrieved from the client directly!
-    public ResponseEntity<QuizSubmission> saveOrSubmitForLiveMode(@PathVariable Long exerciseId, @Valid @RequestBody QuizSubmission quizSubmission,
+    public ResponseEntity<QuizSubmissionBeforeEvaluationDTO> saveOrSubmitForLiveMode(@PathVariable Long exerciseId, @Valid @RequestBody QuizSubmissionFromStudentDTO quizSubmission,
             @RequestParam(name = "submit", defaultValue = "false") boolean submit) {
         log.debug("REST request to save or submit QuizSubmission for live mode : {}", quizSubmission);
         String userLogin = SecurityUtils.getCurrentUserLogin().orElseThrow();
         try {
-            // we set the submitted flag on the server side
-            quizSubmission.setSubmitted(submit);
-            // make sure no results are sent from client to server
-            if (quizSubmission.getResults() != null && !quizSubmission.getResults().isEmpty()) {
-                quizSubmission.setResults(List.of());
-            }
             QuizSubmission updatedQuizSubmission = quizSubmissionService.saveSubmissionForLiveMode(exerciseId, quizSubmission, userLogin, submit);
-            return ResponseEntity.ok(updatedQuizSubmission);
+            return ResponseEntity.ok(QuizSubmissionBeforeEvaluationDTO.of(updatedQuizSubmission));
         }
         catch (QuizSubmissionException e) {
             log.warn("QuizSubmissionException: {} for user {} in quiz {}", e.getMessage(), userLogin, exerciseId);
@@ -233,17 +226,14 @@ public class QuizSubmissionResource {
      */
     @PutMapping("exercises/{exerciseId}/submissions/exam")
     @EnforceAtLeastStudentInExercise
-    public ResponseEntity<QuizSubmission> submitQuizForExam(@PathVariable Long exerciseId, @Valid @RequestBody QuizSubmission quizSubmission) {
+    public ResponseEntity<QuizSubmissionAfterEvaluationDTO> submitQuizForExam(@PathVariable Long exerciseId, @Valid @RequestBody QuizSubmissionFromStudentDTO quizSubmission) {
         long start = System.currentTimeMillis();
         log.debug("REST request to submit QuizSubmission for exam : {}", quizSubmission);
 
-        // recreate pointers back to submission in each submitted answer
-        for (SubmittedAnswer submittedAnswer : quizSubmission.getSubmittedAnswers()) {
-            submittedAnswer.setSubmission(quizSubmission);
-        }
-
-        QuizExercise quizExercise = quizExerciseRepository.findByIdElseThrow(exerciseId);
+        QuizExercise quizExercise = quizExerciseRepository.findByIdWithQuestionsElseThrow(exerciseId);
         User user = userRepository.getUserWithGroupsAndAuthorities();
+
+        QuizSubmission entity = quizSubmissionService.createNewSubmissionFromDTO(quizSubmission, quizExercise);
 
         if (quizExercise.isExamExercise()) {
             ExamSubmissionApi api = examSubmissionApi.orElseThrow(() -> new ExamApiNotPresentException(ExamSubmissionApi.class));
@@ -252,12 +242,12 @@ public class QuizSubmissionResource {
             api.checkSubmissionAllowanceElseThrow(quizExercise, user);
 
             // Prevent multiple submissions (currently only for exam submissions)
-            quizSubmission = (QuizSubmission) api.preventMultipleSubmissions(quizExercise, quizSubmission, user);
+            entity = (QuizSubmission) api.preventMultipleSubmissions(quizExercise, entity, user);
         }
 
-        QuizSubmission updatedQuizSubmission = quizSubmissionService.saveSubmissionForExamMode(quizExercise, quizSubmission, user);
+        QuizSubmission updatedQuizSubmission = quizSubmissionService.saveSubmissionForExamMode(quizExercise, entity, user);
         long end = System.currentTimeMillis();
         log.info("submitQuizForExam took {}ms for exercise {} and user {}", end - start, exerciseId, user.getLogin());
-        return ResponseEntity.ok(updatedQuizSubmission);
+        return ResponseEntity.ok(QuizSubmissionAfterEvaluationDTO.of(updatedQuizSubmission));
     }
 }

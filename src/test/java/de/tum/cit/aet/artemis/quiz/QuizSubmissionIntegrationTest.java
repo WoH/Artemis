@@ -65,6 +65,7 @@ import de.tum.cit.aet.artemis.quiz.domain.ShortAnswerSubmittedText;
 import de.tum.cit.aet.artemis.quiz.domain.SubmittedAnswer;
 import de.tum.cit.aet.artemis.quiz.dto.QuizBatchJoinDTO;
 import de.tum.cit.aet.artemis.quiz.dto.exercise.QuizExerciseReEvaluateDTO;
+import de.tum.cit.aet.artemis.quiz.dto.submission.QuizSubmissionBeforeEvaluationDTO;
 import de.tum.cit.aet.artemis.quiz.dto.submission.QuizSubmissionFromStudentDTO;
 import de.tum.cit.aet.artemis.quiz.dto.submittedanswer.MultipleChoiceSubmittedAnswerFromStudentDTO;
 import de.tum.cit.aet.artemis.quiz.service.QuizBatchService;
@@ -360,7 +361,8 @@ class QuizSubmissionIntegrationTest extends AbstractSpringIntegrationIndependent
         QuizSubmission quizSubmission = QuizExerciseFactory.generateSubmissionForThreeQuestions(quizExercise, 1, false, ZonedDateTime.now());
 
         // submit quiz more times than the allowed number of attempts
-        request.postWithResponseBody("/api/quiz/exercises/" + invalidExerciseId + "/submissions/live", quizSubmission, Result.class, HttpStatus.FORBIDDEN);
+        request.postWithResponseBody("/api/quiz/exercises/" + invalidExerciseId + "/submissions/live", QuizSubmissionFromStudentDTO.of(quizSubmission), Result.class,
+                HttpStatus.FORBIDDEN);
     }
 
     @ParameterizedTest(name = "{displayName} [{index}] {argumentsWithNames}")
@@ -839,7 +841,7 @@ class QuizSubmissionIntegrationTest extends AbstractSpringIntegrationIndependent
         quizSubmission.addSubmittedAnswers(submittedAnswer);
         request.postWithResponseBody("/api/quiz/quiz-exercises/" + quizExercise.getId() + "/start-participation", null, StudentParticipation.class, HttpStatus.OK);
 
-        request.postWithResponseBody("/api/quiz/exercises/" + quizExercise.getId() + "/submissions/live", quizSubmission, Result.class,
+        request.postWithResponseBody("/api/quiz/exercises/" + quizExercise.getId() + "/submissions/live", QuizSubmissionFromStudentDTO.of(quizSubmission), Result.class,
                 tooLarge ? HttpStatus.BAD_REQUEST : HttpStatus.OK);
     }
 
@@ -920,14 +922,14 @@ class QuizSubmissionIntegrationTest extends AbstractSpringIntegrationIndependent
 
             QuizSubmission quizSubmission = QuizExerciseFactory.generateSubmissionForThreeQuestions(quizExercise, 1, false, null);
 
-            QuizSubmission updatedSubmission = request.postWithResponseBody("/api/quiz/exercises/" + quizExercise.getId() + "/submissions/live?submit=true", quizSubmission,
-                    QuizSubmission.class, HttpStatus.OK);
+            QuizSubmissionBeforeEvaluationDTO updatedSubmission = request.postWithResponseBody("/api/quiz/exercises/" + quizExercise.getId() + "/submissions/live?submit=true",
+                    QuizSubmissionFromStudentDTO.of(quizSubmission), QuizSubmissionBeforeEvaluationDTO.class, HttpStatus.OK);
             // check whether submission flag was updated
-            assertThat(updatedSubmission.isSubmitted()).isTrue();
+            assertThat(updatedSubmission.submitted()).isTrue();
             // check whether all answers were submitted properly
-            assertThat(updatedSubmission.getSubmittedAnswers()).hasSameSizeAs(quizSubmission.getSubmittedAnswers());
+            assertThat(updatedSubmission.submittedAnswers()).hasSameSizeAs(quizSubmission.getSubmittedAnswers());
             // check whether submission date was set
-            assertThat(updatedSubmission.getSubmissionDate()).isNotNull();
+            assertThat(updatedSubmission.submissionDate()).isNotNull();
         }
 
         @ParameterizedTest(name = "{displayName} [{index}] {argumentsWithNames}")
@@ -949,8 +951,10 @@ class QuizSubmissionIntegrationTest extends AbstractSpringIntegrationIndependent
             // create a submission for the first time
             QuizSubmission quizSubmission = QuizExerciseFactory.generateSubmissionForThreeQuestions(quizExercise, 1, true, ZonedDateTime.now());
             // submit quiz for the second time, expected status = BAD_REQUEST
-            request.postWithResponseBody("/api/quiz/exercises/" + quizExercise.getId() + "/submissions/live?submit=true", quizSubmission, Result.class, HttpStatus.OK);
-            request.postWithResponseBody("/api/quiz/exercises/" + quizExercise.getId() + "/submissions/live?submit=true", quizSubmission, Result.class, HttpStatus.BAD_REQUEST);
+            request.postWithResponseBody("/api/quiz/exercises/" + quizExercise.getId() + "/submissions/live?submit=true", QuizSubmissionFromStudentDTO.of(quizSubmission),
+                    QuizSubmissionBeforeEvaluationDTO.class, HttpStatus.OK);
+            request.postWithResponseBody("/api/quiz/exercises/" + quizExercise.getId() + "/submissions/live?submit=true", QuizSubmissionFromStudentDTO.of(quizSubmission),
+                    QuizSubmissionBeforeEvaluationDTO.class, HttpStatus.BAD_REQUEST);
         }
     }
 }

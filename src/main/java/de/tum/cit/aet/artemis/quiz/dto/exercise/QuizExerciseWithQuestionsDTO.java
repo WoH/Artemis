@@ -9,8 +9,15 @@ import de.tum.cit.aet.artemis.quiz.domain.QuizExercise;
 import de.tum.cit.aet.artemis.quiz.dto.question.QuizQuestionWithoutSolutionDTO;
 
 @JsonInclude(JsonInclude.Include.NON_EMPTY)
-public record QuizExerciseWithQuestionsDTO(@JsonUnwrapped QuizExerciseWithoutQuestionsDTO quizExerciseWithoutQuestionsDTO, List<QuizQuestionWithoutSolutionDTO> quizQuestions) {
+public record QuizExerciseWithQuestionsDTO(@JsonUnwrapped QuizExerciseWithoutQuestionsDTO quizExerciseWithoutQuestionsDTO, List<QuizQuestionWithoutSolutionDTO> quizQuestions)
+        implements QuizExerciseForStudentDTO {
 
+    /**
+     * Creates a QuizExerciseWithQuestionsDTO from a QuizExercise, including quiz questions without their solutions.
+     *
+     * @param quizExercise the QuizExercise entity
+     * @return the created QuizExerciseWithQuestionsDTO
+     */
     public static QuizExerciseWithQuestionsDTO of(QuizExercise quizExercise) {
         return new QuizExerciseWithQuestionsDTO(QuizExerciseWithoutQuestionsDTO.of(quizExercise),
                 quizExercise.getQuizQuestions().stream().map(QuizQuestionWithoutSolutionDTO::of).toList());
