@@ -1359,8 +1359,8 @@ components:
       type: object
       description: Response containing consistency check timing
       properties:
-        startTime: {type: string, description: Starting time, example: !!timestamp '2025-07-27T07:17:05.500Z'}
-        endTime: {type: string, description: Ending time, example: !!timestamp '2025-07-27T07:17:05.500Z'}
+        startTime: {type: string, description: 'Starting time (ISO-8601), e.g. 2025-07-27T07:17:05.500459'}
+        endTime: {type: string, description: 'Ending time (ISO-8601), e.g. 2025-07-27T07:17:05.500459'}
         durationS: {type: number, format: double, description: Duration of consistency
             check, example: 27.765}
     RewriteFaqRequest:
