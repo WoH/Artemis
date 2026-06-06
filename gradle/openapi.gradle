@@ -321,3 +321,32 @@
             commandLine "npx", "tsx", "gradle/scripts/openapi-post-processing.ts"
         }
     }
+
+
+    // Lints the generated OpenAPI contract with Stoplight Spectral. See .spectral.yaml.
+    tasks.register('lintOpenApiSpec', Exec) {
+        description = "Lints the generated OpenAPI contract (openapi/openapi.yaml) with Stoplight Spectral"
+        group = "verification"
+
+        inputs.file(file("$rootDir/openapi/openapi.yaml"))
+        inputs.file(file("$rootDir/.spectral.yaml"))
+
+        // Resolves the pinned @stoplight/spectral-cli from node_modules/.bin via pnpm exec
+        // (matches the cross-platform npx pattern of postProcessTsFiles above).
+        if (System.getProperty("os.name").toLowerCase().contains("win")) {
+            commandLine "cmd", "/c", "pnpm", "exec", "spectral", "lint",
+                "openapi/openapi.yaml", "--ruleset", ".spectral.yaml", "--fail-severity=error"
+        } else {
+            commandLine "pnpm", "exec", "spectral", "lint",
+                "openapi/openapi.yaml", "--ruleset", ".spectral.yaml", "--fail-severity=error"
+        }
+    }
+
+    // Lint the freshly generated contract. We finalize `generateOpenApiDocs` (the springdoc
+    // openapi-gradle-plugin task that writes openapi/openapi.yaml) rather than `openApiGenerate`,
+    // because `pruneOpenApiSpec` mutates the file in place before TS client generation — we want
+    // to lint the canonical, committed-shape spec, not the pruned one. `tasks.matching` is lazy
+    // and tolerant: it won't fail configuration if the task is absent in a given invocation.
+    tasks.matching { it.name == 'generateOpenApiDocs' }.configureEach {
+        finalizedBy 'lintOpenApiSpec'
+    }

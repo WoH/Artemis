@@ -1,0 +1,341 @@
+# =============================================================================
+# Artemis OpenAPI contract lint (Stoplight Spectral)
+# =============================================================================
+# Lints the COMMITTED contract at openapi/openapi.yaml, which springdoc generates
+# (see gradle/openapi.gradle, `generateOpenApiDocs`) for the tutorialgroup, hyperion,
+# calendar, and globalsearch web modules.
+#
+# This is the contract-side companion to the source-side ArchUnit REST rules
+# (AbstractModuleResourceArchitectureTest / AuthorizationArchitectureTest).
+# ArchUnit guards the Java controllers (all ~970 endpoints); Spectral guards the
+# emitted contract (the ~46 operations of the API-driven subset). Spectral sees
+# things ArchUnit structurally cannot: resolved dual-mapping alias path keys,
+# actual response schemas, post-strip operationId collisions, emitted security.
+#
+# Artemis-specific calibration (do NOT drop in a vanilla Zalando/OWASP profile):
+#   * Identifiers and query params are camelCase (problemStatementMarkdown,
+#     pageSize) — any snake_case rule is INVERTED to camel.
+#   * Resource ids are numeric Long values — an OWASP "no-numeric-ids" profile
+#     would be a false positive for the entire surface and is intentionally not used.
+#   * springdoc emits happy-path 200s only (no securitySchemes, no error bodies,
+#     no problem+json, no response headers) — the "springdoc gap" rules below
+#     surface that backlog rather than assuming a hand-written spec.
+#
+# Run:  pnpm run lint:openapi          (fails on `error` severity)
+#       pnpm run lint:openapi:report   (writes build/reports/openapi-lint.json)
+#       ./gradlew generateOpenApiDocs      (finalizedBy lintOpenApiSpec)
+#
+# This is intentionally NOT expected to pass yet: it surfaces the real backlog of
+# contract violations. Consciously-deferred findings go in `overrides` (the
+# shrinking baseline) — that list may only ever shrink.
+# =============================================================================
+
+extends: [[spectral:oas, recommended]]
+
+# Pin the document type: the contract is OpenAPI 3.1.0. Stops Spectral from
+# silently applying 2.0/3.0-only heuristics and fails loudly if the generator
+# ever downgrades the `openapi:` version.
+formats: [oas3_1]
+
+# Custom rule implementations: dependency-free ESM modules, each a single
+# default export `function(input, options, context)`.
+functionsDir: "./.spectral/functions"
+functions:
+  - artemisPathShape            # api/<module>/<plural>/{<singular>Id} on resolved keys
+  - artemisNoLyingErrorSchema   # a 4xx/5xx body must differ from the 2xx body
+  - artemisOperationIdCollision # springdoc collision artifacts (update_1, create_1, ...)
+  - artemisDeprecatedSunset     # a `deprecated: true` op must announce a Sunset header
+
+# -----------------------------------------------------------------------------
+# Shrinking-baseline ratchet (mirrors ArchUnit PATH_VARIABLE_COLLECTION_BASELINE)
+# -----------------------------------------------------------------------------
+# Known, consciously-accepted violations are pinned here so CI can stay green
+# while the contract is fixed incrementally. The list may only ever SHRINK —
+# adding an entry to silence a fresh violation is a review red flag. It starts
+# absent (Spectral rejects an empty `overrides`) so every current violation is
+# visible in the report; add an `overrides:` block here only when deferring one,
+# e.g.:
+#   overrides:
+#     - files: ["openapi/openapi.yaml#/paths/~1api~1.../get"]
+#       rules: { artemis-path-shape-collection-id: "off" }
+
+rules:
+  # NOTE: `typed-enum` and `duplicated-entry-in-enum` (spectral:oas, recommended)
+  # are intentionally NOT disabled. They were briefly broken because springdoc
+  # emitted non-standard YAML `!!timestamp` example tags (Timing.startTime/endTime),
+  # which desynced Stoplight's YAML parser into null nodes and crashed the
+  # recursive `$..[?(@.enum)]` selectors. The example values are now plain ISO-8601
+  # strings (the correct OpenAPI form), so the spec parses cleanly and both rules
+  # run. The durable fix belongs in springdoc (@Schema example on the Timing DTO);
+  # if it regresses to `!!timestamp`, these two rules will crash again — fix the
+  # generator, do not re-disable them.
+
+  # ===========================================================================
+  # Custom-function rules (the contract-only checks)
+  # ===========================================================================
+
+  artemis-path-shape-collection-id:
+    description: >-
+      Every {<entity>Id} path variable must be immediately preceded by its plural
+      collection segment (api/<module>/<plural-collection>/{<collection-singular>Id}),
+      exactly or as a subtype suffix (programming-exercises/{exerciseId}). Runs on
+      resolved path keys, so it also catches dual-mapping alias keys the source-side
+      ArchUnit rule (values[0] only) cannot see.
+    message: "{{error}}"
+    given: "$.paths[*]~"
+    severity: error
+    formats: [oas3_1]
+    then:
+      function: artemisPathShape
+
+  artemis-no-lying-error-schema:
+    description: >-
+      Error responses (4xx/5xx) must not reuse the operation's success (2xx)
+      response schema. A "lying error schema" makes failures indistinguishable
+      from success by shape; error bodies should describe a problem (ideally
+      application/problem+json), not the success entity.
+    message: "{{error}}"
+    given: "$.paths[*][get,put,post,delete,patch]"
+    severity: error
+    formats: [oas3_1]
+    then:
+      function: artemisNoLyingErrorSchema
+
+  artemis-operationid-no-collision-suffix:
+    description: >-
+      operationId must not end in a '_<number>' collision suffix. springdoc emits
+      these when two Java controller methods share a name; OpenAPIConfiguration.java
+      strips the suffix, so its presence in the committed spec signals a duplicate
+      method name that will collide in the generated Angular client. Rename the
+      controller method instead of relying on the suffix.
+    message: "operationId '{{value}}' ends in a '_<number>' collision suffix"
+    given: "$.paths[*][get,put,post,delete,patch].operationId"
+    severity: error
+    formats: [oas3_1]
+    then:
+      function: pattern
+      functionOptions:
+        notMatch: "_\\d+$"
+
+  artemis-operationid-post-strip-unique:
+    description: >-
+      Every operationId must remain unique AFTER OpenAPIConfiguration.java strips
+      the trailing '_<number>' suffix. Two operationIds that collapse onto the same
+      stem (e.g. 'create' and 'create_1') generate a single Angular client method,
+      and the second silently overwrites the first. Rename the offending Java
+      controller methods so each operationId is unique post-strip.
+    message: "{{error}}"
+    given: "$"
+    severity: error
+    formats: [oas3_1]
+    then:
+      function: artemisOperationIdCollision
+
+  artemis-deprecated-has-sunset:
+    description: >-
+      A deprecated operation must advertise a Sunset response header (RFC 8594),
+      ideally with a Link rel="successor-version" (RFC 8288), so clients learn when
+      it retires. Artemis sets these at runtime via LegacyApiPathDeprecationInterceptor
+      but springdoc does not surface them into the contract.
+    message: "{{error}}"
+    given: "$.paths[*][get,put,post,delete,patch]"
+    severity: warn
+    formats: [oas3_1]
+    then:
+      function: artemisDeprecatedSunset
+
+  # ===========================================================================
+  # Paths & naming (built-in functions)
+  # ===========================================================================
+
+  artemis-paths-kebab-case:
+    description: >-
+      API path templates must be kebab-case under a leading /api/ prefix. Module
+      prefixes may be multi-segment (e.g. /api/core/calendar/...). Each literal
+      segment is lower-case kebab; brace path params ({courseId}) are allowed.
+    message: "{{property}} is not a valid kebab-case /api/ path: {{value}}"
+    given: "$.paths[*]~"
+    severity: error
+    formats: [oas3_1]
+    then:
+      function: pattern
+      functionOptions:
+        match: '^/api(/(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*|\{[a-zA-Z][a-zA-Z0-9]*\}))+/?$'
+
+  artemis-paths-no-trailing-slash:
+    description: API paths must not end with a trailing slash and must not contain empty segments (//).
+    message: "Path must not contain a trailing or doubled slash: {{value}}"
+    given: "$.paths[*]~"
+    severity: error
+    formats: [oas3_1]
+    then:
+      function: pattern
+      functionOptions:
+        notMatch: '(//|/$)'
+
+  artemis-paths-no-uri-versioning:
+    description: API version must not be encoded in the URI path (no /v1, /v2 segments).
+    message: "Path must not contain URI versioning: {{value}}"
+    given: "$.paths[*]~"
+    severity: error
+    formats: [oas3_1]
+    then:
+      function: pattern
+      functionOptions:
+        notMatch: '/v[0-9]+(/|$)'
+
+  artemis-path-param-camelcase:
+    description: Path parameter names must be camelCase (Artemis convention, e.g. courseId, tutorialGroupId).
+    message: "Path parameter name should be camelCase: {{value}}"
+    given: "$.paths[*][get,put,post,delete,patch].parameters[?(@.in=='path')].name"
+    severity: error
+    formats: [oas3_1]
+    then:
+      function: casing
+      functionOptions:
+        type: camel
+
+  artemis-query-param-camelcase:
+    description: >-
+      Query parameter names must be camelCase. Deliberately INVERTS the Zalando
+      snake_case convention because Artemis uses camelCase (pageSize, loginOrName,
+      pageIndex, etc.).
+    message: "Query parameter name should be camelCase: {{value}}"
+    given: "$.paths[*][get,put,post,delete,patch].parameters[?(@.in=='query')].name"
+    severity: error
+    formats: [oas3_1]
+    then:
+      function: casing
+      functionOptions:
+        type: camel
+
+  artemis-property-camelcase:
+    description: >-
+      Schema property names must be camelCase (Artemis convention, e.g.
+      problemStatementMarkdown). Recursive descent covers nested object schemas.
+    message: "Schema property name should be camelCase: {{property}}"
+    given: "$.components.schemas[*]..properties[*]~"
+    severity: error
+    formats: [oas3_1]
+    then:
+      function: casing
+      functionOptions:
+        type: camel
+
+  artemis-path-param-required:
+    description: Every path parameter must be declared required (OpenAPI mandates this; surface any drift).
+    message: "Path parameter must set required: true"
+    given: "$.paths[*][get,put,post,delete,patch].parameters[?(@.in=='path')]"
+    severity: error
+    formats: [oas3_1]
+    then:
+      field: required
+      function: truthy
+
+  # ===========================================================================
+  # Responses & status codes
+  # ===========================================================================
+
+  artemis-response-codes-standard:
+    description: >-
+      Response status codes must be from the approved Artemis set (see the status
+      table in the REST API guidelines). Surfaces non-standard or vague keys.
+    message: "Non-standard response status code: {{property}}"
+    given: "$.paths[*][get,put,post,delete,patch].responses.*~"
+    severity: error
+    formats: [oas3_1]
+    then:
+      function: enumeration
+      functionOptions:
+        values:
+          - "200"
+          - "201"
+          - "204"
+          - "400"
+          - "401"
+          - "403"
+          - "404"
+          - "409"
+          - "429"
+          - "500"
+          - default
+
+  artemis-429-requires-retry-after:
+    description: A 429 (Too Many Requests) response must advertise a Retry-After header.
+    message: "429 response must define a Retry-After header"
+    given: "$.paths[*][get,put,post,delete,patch].responses['429']"
+    severity: warn
+    formats: [oas3_1]
+    then:
+      field: headers.Retry-After
+      function: defined
+
+  artemis-errors-use-problem-json:
+    description: >-
+      Error responses (4xx/5xx) should be modelled as RFC 9457 problem documents
+      (application/problem+json). springdoc emits plain application/json, so this
+      surfaces the gap (fires on the /api/search 400 today).
+    message: "Error response should provide an application/problem+json body"
+    given: "$.paths[*][get,put,post,delete,patch].responses[?(@property && @property.match && @property.match(/^[45]/))]"
+    severity: warn
+    formats: [oas3_1]
+    then:
+      field: "content.application/problem+json"
+      function: defined
+
+  # ===========================================================================
+  # Security (springdoc gap — surfaces across all operations today)
+  # ===========================================================================
+
+  artemis-operation-has-security:
+    description: >-
+      Every operation should declare its security requirements. springdoc emits no
+      security, so this surfaces the gap across all operations (the fix is a
+      springdoc OperationCustomizer that maps @EnforceAtLeastX to a requirement).
+    message: "Operation should declare a security requirement"
+    given: "$.paths[*][get,put,post,delete,patch]"
+    severity: warn
+    formats: [oas3_1]
+    then:
+      field: security
+      function: defined
+
+  artemis-security-schemes-defined:
+    description: >-
+      The document should define reusable security schemes under
+      components.securitySchemes. Missing entirely in the springdoc output.
+    message: "components.securitySchemes must be defined"
+    given: "$.components"
+    severity: warn
+    formats: [oas3_1]
+    then:
+      field: securitySchemes
+      function: truthy
+
+  # ===========================================================================
+  # Pagination
+  # ===========================================================================
+
+  artemis-page-size-bounded:
+    description: >-
+      Page-size query parameters (pageSize / size) must declare an upper bound
+      (schema.maximum) to prevent unbounded result sets.
+    message: "Page-size parameter must declare schema.maximum"
+    given: "$.paths[*][get,put,post,delete,patch].parameters[?(@.in=='query' && (@.name=='pageSize' || @.name=='size'))]"
+    severity: warn
+    formats: [oas3_1]
+    then:
+      field: schema.maximum
+      function: defined
+
+  artemis-page-index-bounded:
+    description: >-
+      Page-index query parameters (pageIndex / page) must declare a lower bound
+      (schema.minimum).
+    message: "Page-index parameter must declare schema.minimum"
+    given: "$.paths[*][get,put,post,delete,patch].parameters[?(@.in=='query' && (@.name=='pageIndex' || @.name=='page'))]"
+    severity: warn
+    formats: [oas3_1]
+    then:
+      field: schema.minimum
+      function: defined
