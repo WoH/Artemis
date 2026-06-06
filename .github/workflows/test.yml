@@ -313,16 +313,6 @@ jobs:
     - name: TypeScript Code Style
       run: pnpm run lint
       if: success() || failure()
-    - name: OpenAPI Contract Lint
-      # Lints the committed openapi/openapi.yaml (see .spectral.yaml). The
-      # github-actions formatter surfaces each finding as an inline PR annotation.
-      # `continue-on-error` keeps this non-gating while the initial backlog is
-      # worked down (the spec intentionally does not pass yet); remove it — or
-      # baseline the remaining findings via `overrides` in .spectral.yaml — to
-      # make a clean contract a required check.
-      run: pnpm run lint:openapi:ci
-      if: success() || failure()
-      continue-on-error: true
     - name: Install Playwright Dependencies
       run: pnpm install --frozen-lockfile
       working-directory: src/test/playwright

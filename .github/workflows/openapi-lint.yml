@@ -1,0 +1,49 @@
+name: OpenAPI Contract Lint
+
+on:
+  push:
+    branches: [ develop ]
+    paths:
+      - openapi/openapi.yaml
+      - .spectral.yaml
+      - .spectral/**
+      - .github/workflows/openapi-lint.yml
+  pull_request:
+    paths:
+      - openapi/openapi.yaml
+      - .spectral.yaml
+      - .spectral/**
+      - .github/workflows/openapi-lint.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  node: 24
+
+jobs:
+  openapi-contract-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '${{ env.node }}'
+          cache: 'pnpm'
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Lint OpenAPI contract (Spectral)
+        # Lints the committed openapi/openapi.yaml against .spectral.yaml. The
+        # github-actions formatter renders each finding as an inline PR annotation.
+        # NOTE: this check is intentionally red while the initial contract backlog
+        # is worked down (see documentation/docs/developer/openapi-spectral-findings.md).
+        # To stop it from blocking, add `continue-on-error: true` here, or baseline
+        # the remaining findings via `overrides` in .spectral.yaml (the ratchet).
+        run: pnpm run lint:openapi:ci
