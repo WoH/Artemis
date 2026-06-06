@@ -38,7 +38,11 @@
                 // controllers — no real persistence happens here.
                 "-Dspring.liquibase.enabled=false",
                 "-Dspring.jpa.hibernate.ddl-auto=create",
-                "-Dspring.main.banner-mode=off"
+                "-Dspring.main.banner-mode=off",
+                // Keep the spec-generation boot quiet: only WARN+ from the forked app. The context
+                // only needs to start far enough for springdoc to introspect controllers, so the
+                // INFO/DEBUG boot chatter is pure noise in CI logs (errors still surface at WARN+).
+                "-Dlogging.level.root=WARN"
             ]
 
             // TODO add package later add ${System.getProperty("springdoc.packages-to-scan")} package via cli property

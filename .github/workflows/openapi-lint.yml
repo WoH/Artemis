@@ -8,12 +8,22 @@ on:
       - .spectral.yaml
       - .spectral/**
       - .github/workflows/openapi-lint.yml
+      # The committed spec is generated from these scanned modules — changes here
+      # may make it stale, so the regenerate-and-diff guard must run.
+      - src/main/java/de/tum/cit/aet/artemis/tutorialgroup/**
+      - src/main/java/de/tum/cit/aet/artemis/hyperion/**
+      - src/main/java/de/tum/cit/aet/artemis/calendar/**
+      - src/main/java/de/tum/cit/aet/artemis/globalsearch/**
   pull_request:
     paths:
       - openapi/openapi.yaml
       - .spectral.yaml
       - .spectral/**
       - .github/workflows/openapi-lint.yml
+      - src/main/java/de/tum/cit/aet/artemis/tutorialgroup/**
+      - src/main/java/de/tum/cit/aet/artemis/hyperion/**
+      - src/main/java/de/tum/cit/aet/artemis/calendar/**
+      - src/main/java/de/tum/cit/aet/artemis/globalsearch/**
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
@@ -21,6 +31,7 @@ concurrency:
 
 env:
   node: 24
+  java: 25
 
 jobs:
   openapi-contract-lint:
@@ -28,22 +39,46 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - name: Setup Java
+        uses: actions/setup-java@v5
         with:
-          run_install: false
+          distribution: 'temurin'
+          java-version: '${{ env.java }}'
+          cache: 'gradle'
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: '${{ env.node }}'
-          cache: 'pnpm'
-      - name: Install Dependencies
+      # Activate the pinned pnpm via corepack (bundled with Node 24) instead of
+      # pnpm/action-setup, which still runs on the deprecated Node 20 runtime.
+      - name: Enable pnpm
+        run: corepack enable
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      # Pre-step: the committed openapi/openapi.yaml must equal what springdoc
+      # generates from source. Regenerate it and fail if it drifts.
+      - name: Regenerate OpenAPI spec
+        run: ./gradlew generateOpenApiDocs -x webapp -x lintOpenApiSpec --console=plain
+      - name: Upload regenerated spec
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: openapi-spec
+          path: openapi/openapi.yaml
+          if-no-files-found: warn
+      - name: Verify committed spec is up to date
+        run: |
+          if ! git diff --quiet -- openapi/openapi.yaml; then
+            echo "::error file=openapi/openapi.yaml::Committed openapi.yaml is stale. Run './gradlew generateOpenApiDocs' and commit the result (or download the 'openapi-spec' artifact from this run)."
+            git --no-pager diff --stat -- openapi/openapi.yaml
+            exit 1
+          fi
+          echo "openapi.yaml is up to date with the generator."
+      # Lint the contract regardless of the staleness result so both signals show.
       - name: Lint OpenAPI contract (Spectral)
-        # Lints the committed openapi/openapi.yaml against .spectral.yaml. The
-        # github-actions formatter renders each finding as an inline PR annotation.
-        # NOTE: this check is intentionally red while the initial contract backlog
-        # is worked down (see documentation/docs/developer/openapi-spectral-findings.md).
-        # To stop it from blocking, add `continue-on-error: true` here, or baseline
-        # the remaining findings via `overrides` in .spectral.yaml (the ratchet).
+        if: always()
+        # The github-actions formatter renders each finding as an inline PR annotation.
+        # NOTE: intentionally red while the initial contract backlog is worked down
+        # (see documentation/docs/developer/openapi-spectral-findings.md). To stop it
+        # blocking, add `continue-on-error: true` or baseline findings via `overrides`.
         run: pnpm run lint:openapi:ci
